@@ -1,6 +1,6 @@
 # DTSU666_CHINT_to_HUAWEI_translator_arduino
-This poject is based on a great project  "DTSU666_CHINT_to_HUAWEI_translator" https://github.com/salakrzy/DTSU666_CHINT_to_HUAWEI_translator/tree/main
-I only try use this on arduino IDE.
+This poject is based on a great project  "DTSU666_CHINT_to_HUAWEI_translator" https://github.com/salakrzy/DTSU666_CHINT_to_HUAWEI_translator/tree/main <br>
+I only try use this on arduino IDE.<br>
 This project uses ESP32 to translate MODBUS messages of CHINT's DTSU666 Energy Meter into HUAWEI DTSU666H format.
 This project translates the DTSU666 CHINT Power Meter registers addreses to Huawei DTSU666H Power Meter addreses.
 
