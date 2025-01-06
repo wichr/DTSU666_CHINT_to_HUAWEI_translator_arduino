@@ -74,8 +74,48 @@ int numb_chint_request = 0;
 uint32_t chint_request_time = millis();
 float Chint_RegData[CHINT_REQUEST1 / 2 + CHINT_REQUEST2 / 2]; // CHINT register data
 
-int HuaweiTranslate[CHINT_REQUEST1 / 2 + CHINT_REQUEST2 / 2] = { /* mapping */ };
-int Divider[CHINT_REQUEST1 / 2 + CHINT_REQUEST2 / 2] = { /* dividers */ };
+int HuaweiTranslate[CHINT_REQUEST1/2+CHINT_REQUEST2/2]=
+{6, 7, 8,   	// Phase A,B,C current   0 1 2
+24,				// 3  ???
+ 3, 4, 5,		//Phase A,B,C Voltage   4 5 6
+25,				//  7   ???
+ 0, 1, 2,		// A-B, B-C, C-A line voltage   8 9 10
+34, 			// Frequency   11
+ 9,				// Active Power  12
+10,11,12,		//Phase A,B,C Active Power   13 14 15
+13,				// Reactive Power   16  
+14,	15,16, 		//Reactive Power qa, qb,qc , A, B, C 17, 18 ,19,     
+17,18,19,20, 	// Apparent Power total a b c  20  21  22 23
+21,22,23,24,	// Power Factor pft, pfa, pfb, pfc  24, 25,26,27
+36, 			// Total Active Electricity    28
+37,38,39,		// Active Electricity  a b c  29 30 31 
+41,				// Total Positive Active Electricity 32 
+33,34,35,		// 33 34 35
+46,				// Total negative Active electricity 36 
+37,38,39, 		// 37 38 39  
+40,				// 40  END Lower Chints registers
+41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70
+}; 
+int Divider[CHINT_REQUEST1/2+CHINT_REQUEST2/2]=
+{10, 10, 10,   		// Phase A-B,B-C,C-A Voltage  0 1 2
+10, 10, 10, 		//Phase A,B,C Voltage		3 4 5
+1000,1000, 1000,	// Phase A,B,C current		6 7 8
+10, 				// Active Power total			9
+10,10,10,			// Phase A,B,C Active Power   10,11,12
+10,					// Reactive Power  total  13
+10,10,10,			//Phase A,B,C Reactive Power   14 15 16
+10,10,10,10,		// Apparent Power total, phase A,B,C  17, 18, 19, 20
+10,10,10,10,		// Power Factor total , phase A, B, C 21,22, 23, 24
+1,1,1,				// 25, 26, 27   ???
+1, 					// 28  			???
+1,1,1,    			// 29 30 31		???
+1,					// 32			???
+1,					// 33			
+100,				// 34  Frequency
+1,      			// 35			???
+1000,				// 36  Total active electricity
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+}; 
 
 WiFiClient espClient;
 PubSubClient client(espClient);
