@@ -1,37 +1,62 @@
-#include "HardwareSerial.h"  // z biblioteki <Arduino.h> dla Serial, millis() itp.
+// =================================================================================================
+// eModbus: Copyright 2020 by Michael Harwerth, Bert Melis and the contributors to ModbusClient
+//               MIT license - see license.md for details
+// =================================================================================================
+/* Example code for exchange data between DTSU666 CHINT and DTSU666H Huawei Power Meter
+using eMOdbus library from https://github.com/eModbus
+when you activate power meter in smartfon aplication the SUN2000 start sending request "0B 03 07 D1 00 01 D5 ED"  where
+0B - Power Meter Modbus address (default 11)
+03 - Function (READ_HOLD_REGISTER)
+07 D1 - register address to read (dec 2001 )
+00 01 - how many registers read (1 register mean 2 bytes)
+D5 ED - CRC checksum
+
+If data in register address 0x07D1 = 0x3B11  (or 0x3F80 in some old versions) the sun2000 recognize it as  PowerMeter is active
+slave answer should look like this  "0B 03 3B 11 80 30 15"  in old versions "0B 03 02 3F 80 30 15" 
+after this SUN200 send request  "0B 03 08 36 00 50 A7 32"
+and we should send value 80  registers begnining from address 0x0836  (dec 2002)
+from time to time SUN2000 send request 0B 03 08 A6 00 0A 27 24 but i do not know what exactly is stored in this 10 registers begining from 0x08A6. I asked support Huawai but they have not answered.
+Information about HUAWEI registers addresses
+https://forum.huawei.com/enterprise/en/how-to-connect-custom-meter-dtsu666-h-to-smartlogger1000/thread/599712-100027
+Information about CHINT registers addresses
+https://www.aggsoft.com/serial-data-logger/tutorials/modbus-data-logging/chint-instrument-dsu666-dtsu666.htm
+I divided request to CHINT into two part because for one request the number of  registers in answer is to large
+*/ 
+
+#include "HardwareSerial.h"  // From <Arduino.h> for Serial, millis(), etc.
 #include "Logging.h"
-#include "ModbusClientRTU.h" // nagłówek klienta Modbus RTU z biblioteki eModbus
+#include "ModbusClientRTU.h" // Modbus RTU client header from eModbus library
 #include "ModbusServerRTU.h"
-#include <WiFi.h> // #include <WiFiManager.h> kasuj
+#include <WiFi.h>
 #include <PubSubClient.h>
 
-// Definicje pinów i stałych
+// Pin definitions and constants
 #define RX1_PIN GPIO_NUM_17 // CHINT
 #define TX1_PIN GPIO_NUM_4  // CHINT
 #define REDE1_PIN GPIO_NUM_16 // CHINT
 #define RX2_PIN GPIO_NUM_23 // Huawei
 #define TX2_PIN GPIO_NUM_19 // Huawei
 #define REDE2_PIN GPIO_NUM_21 // Huawei
-#define HUAWEI_ID 0x0B // Adres inwertera Huawei
-#define CHINT_ID 0x01 // Adres licznika CHINT
+#define HUAWEI_ID 0x0B // Address of the Huawei inverter
+#define CHINT_ID 0x01 // Address of the CHINT meter
 #define BAUDRATE 9600
-#define HUAWEI_START_REG_1 0x0836 // Adres startowy do odczytu danych
-#define HUAWEI_START_REG_2 0x08A6 // Drugi adres startowy (nieznane dane)
-#define CHINT_START_REG_1 0x2000  // Niskie rejestry
-#define CHINT_START_REG_2 0x401E  // Wysokie rejestry
-#define CHINT_REQUEST1 82 // Liczba rejestrów niskich
-#define CHINT_REQUEST2 60 // Liczba rejestrów wysokich
-#define READ_TIMER 300 // Czas między odczytami CHINT (ms)
-#define MQTT_TIMER 10000 // Czas między wysyłaniem danych do MQTT (ms)
+#define HUAWEI_START_REG_1 0x0836 // Start address for Huawei data
+#define HUAWEI_START_REG_2 0x08A6 // Second start address (unknown data)
+#define CHINT_START_REG_1 0x2000  // Low registers
+#define CHINT_START_REG_2 0x401E  // High registers
+#define CHINT_REQUEST1 82 // Number of low registers
+#define CHINT_REQUEST2 60 // Number of high registers
+#define READ_TIMER 300 // Interval between CHINT reads (ms)
+#define MQTT_TIMER 10000 // Interval for sending data to MQTT (ms)
 
-// Tablica mapowania zapytań CHINT
+// CHINT request mapping table
 uint16_t CHINT_request_map[3][6] = {
   {0x2000, 0x201E, 0x203A, 0x401E, 0x4034, 0x4048}, 
   {15, 14, 12, 11, 10, 9}, 
   {0, 15, 29, 41, 52, 62}
 };
 
-// Dane konfiguracyjne WiFi i MQTT
+// WiFi and MQTT configuration
 const char* ssid = "wifi username";
 const char* password = "wifi password";
 const char* mqttServer = "mqtt server";
@@ -39,18 +64,18 @@ const int mqttPort = 1883;
 const char* mqttUser = "mqtt username";
 const char* mqttPassword = "mqtt password";
 
-// Globalne zmienne
+// Global variables
 bool data_ready = false;
 bool mqtt_on = true;
 uint32_t mqtt_interval = millis();
-int LED_BUILTIN = 2; // Dioda na DevKit
-int errors = 1; // Liczba błędów
+int LED_BUILTIN = 2; // Built-in LED on DevKit
+int errors = 1; // Error counter
 int numb_chint_request = 0;
 uint32_t chint_request_time = millis();
-float Chint_RegData[CHINT_REQUEST1 / 2 + CHINT_REQUEST2 / 2]; // Dane z rejestrów CHINT
+float Chint_RegData[CHINT_REQUEST1 / 2 + CHINT_REQUEST2 / 2]; // CHINT register data
 
-int HuaweiTranslate[CHINT_REQUEST1 / 2 + CHINT_REQUEST2 / 2] = { /* mapowanie */ };
-int Divider[CHINT_REQUEST1 / 2 + CHINT_REQUEST2 / 2] = { /* dzielniki */ };
+int HuaweiTranslate[CHINT_REQUEST1 / 2 + CHINT_REQUEST2 / 2] = { /* mapping */ };
+int Divider[CHINT_REQUEST1 / 2 + CHINT_REQUEST2 / 2] = { /* dividers */ };
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -58,7 +83,6 @@ PubSubClient client(espClient);
 ModbusServerRTU MBserver(Serial2, 2000, REDE2_PIN);  
 ModbusClientRTU MbChint(Serial1, REDE1_PIN); 
 
-// Funkcja obsługi FC03
 // FC03: worker to create answer  Modbus function code 0x03 (READ_HOLD_REGISTER) for Huawei Master Client
 ModbusMessage FC03(ModbusMessage request) {
 	uint16_t words; 
@@ -89,7 +113,11 @@ ModbusMessage FC03(ModbusMessage request) {
 	return response;
 }
 
-// Obsługa danych
+// Data handler
+// Define an onData handler function to receive the regular responses
+// Arguments are received response message and the request's token
+// The device has values all as IEEE754 float32 in two consecutive registers
+// Read the CHint response in a loop
 void handleData1(ModbusMessage response, uint32_t token) {
 	uint8_t words;      			// response CHINT number of registers
 	response.get(2, words);
@@ -143,7 +171,6 @@ void handleData1(ModbusMessage response, uint32_t token) {
 
 }
 
-// Obsługa błędów
 // Define an onError handler function to receive error responses
 // Arguments are the error code returned and a user-supplied token to identify the causing request
 void handleError(Error error, uint32_t token) {
@@ -154,7 +181,6 @@ void handleError(Error error, uint32_t token) {
   digitalWrite(LED_BUILTIN, LOW);
 }
 
-// Konfiguracja połączenia MQTT
 void setMqttConnection(){
 	uint32_t wifi_test=millis();
 	WiFi.begin(ssid, password);
@@ -187,15 +213,16 @@ void setMqttConnection(){
 		digitalWrite(LED_BUILTIN, HIGH);  // blue LED on if MQTT server connection is OK
 }
 }
-
-// Wysyłanie danych MQTT
 void sendMessage(String TopicName, String keyName, float keyValue) {
-  String reg_data = String(keyValue);
-  String publishstring = "DTSU666/" + TopicName + "/" + keyName;
-  client.publish(publishstring.c_str(), reg_data.c_str());
+    String reg_data = "";
+    reg_data += keyValue;
+    String publishstring = "DTSU666/";
+    publishstring += TopicName;
+	publishstring += "/";
+	publishstring += keyName;
+    client.publish(publishstring.c_str(), reg_data.c_str());
 }
 
-// Publikowanie danych do MQTT
 void handleMqttPublish (){
 	if (client.connected()){
 		sendMessage("Voltage", "ua_V", Chint_RegData[3]);
@@ -224,7 +251,8 @@ void handleMqttPublish (){
 	}
 }
 
-// Funkcja setup()
+
+// Setup function
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
@@ -243,7 +271,7 @@ void setup() {
   MBserver.start(1);
 }
 
-// Funkcja loop()
+// Loop function
 void loop() {
   static uint32_t next_request = millis();
   if (millis() - next_request > READ_TIMER) {
